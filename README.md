@@ -191,7 +191,7 @@ uv run python main.py --help
 
 ## Quick Start
 
-### Process Your First Images
+### Process Your First Images (CLI)
 
 1. **Create an input directory** and add your images:
    ```bash
@@ -211,6 +211,24 @@ uv run python main.py --help
    ```bash
    ls -la output/
    ```
+
+### Run the Web UI (Gradio)
+
+1. Ensure dependencies are installed:
+   ```bash
+   uv sync
+   ```
+2. Start LM Studio and load your preferred vision-language model
+3. Launch the UI:
+   ```bash
+   uv run python ui.py
+   ```
+4. In your browser, open the printed local URL (e.g., http://127.0.0.1:7860)
+5. Choose input source (folder or upload), select format, set the model name, then click "Run OCR"
+
+Notes:
+- The UI accepts any LM Studio vision model name (e.g., `chandra-ocr`, `qwen2.5-vl-7b`, `gemma-3-12b`).
+- Outputs appear under `output/` as with the CLI and are available in the UI for download and preview.
 
 ## Usage
 

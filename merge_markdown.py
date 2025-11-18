@@ -10,7 +10,7 @@ import sys
 from pathlib import Path
 
 
-def merge_markdown_files(input_dir, output_filename, sort_by_filename=True):
+def merge_markdown_files(input_dir: str, output_filename: str, sort_by_filename: bool = True) -> None:
     """Merge all markdown files from input directory into a single file"""
     input_path = Path(input_dir)
 
@@ -51,8 +51,12 @@ def merge_markdown_files(input_dir, output_filename, sort_by_filename=True):
                 merged_content.append(content)
                 merged_content.append("\n---\n\n")
 
+        except (IOError, OSError, PermissionError) as e:
+            print(f"Error reading file {md_file}: {e}")
+        except UnicodeDecodeError as e:
+            print(f"Error decoding file {md_file} (not UTF-8?): {e}")
         except Exception as e:
-            print(f"Error reading {md_file}: {e}")
+            print(f"Unexpected error reading {md_file}: {e}")
 
     # Create output directory and write merged file
     try:
@@ -67,11 +71,15 @@ def merge_markdown_files(input_dir, output_filename, sort_by_filename=True):
 
         print(f"Successfully merged {len(md_files)} files into {output_file}")
 
+    except (IOError, OSError, PermissionError) as e:
+        print(f"Error writing merged file to {output_file}: {e}")
+        sys.exit(1)
     except Exception as e:
-        print(f"Error writing merged file: {e}")
+        print(f"Unexpected error writing merged file: {e}")
+        sys.exit(1)
 
 
-def main():
+def main() -> None:
     parser = argparse.ArgumentParser(
         description="Merge markdown files into a single file"
     )

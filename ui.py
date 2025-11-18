@@ -3,7 +3,7 @@ import subprocess
 import tempfile
 import shutil
 from pathlib import Path
-from typing import List, Optional, Any, Tuple
+from typing import Generator, List, Optional, Any, Tuple
 
 import gradio as gr
 
@@ -52,8 +52,8 @@ def run_ocr(
     input_source: str,
     input_dir: str,
     files: Optional[List[Any]] = None,
-    progress=gr.Progress(),
-):
+    progress: gr.Progress = gr.Progress(),
+) -> Generator[Tuple[str, List[str], List[str]], None, None]:
     """Run OCR as a streaming task, yielding live logs and outputs."""
     progress(0.02, desc="Initializing")
 
@@ -196,7 +196,7 @@ with gr.Blocks(title="LM Studio OCR UI") as demo:
     )
     downloads = gr.Files(label="Download outputs (HTML/Markdown)")
 
-    def toggle_rows(choice: str):
+    def toggle_rows(choice: str) -> Tuple[gr.update, gr.update]:
         return gr.update(visible=(choice == "Use folder")), gr.update(
             visible=(choice == "Upload images")
         )

@@ -5,15 +5,35 @@ import sys
 import time
 from datetime import datetime
 from pathlib import Path
+from typing import Any, Optional, Tuple
 
 import lmstudio as lms
-from PIL import Image
+from PIL import Image, ImageDraw, ImageFont
 from bs4 import BeautifulSoup
 
 from prompts import PROMPT_MAPPING
 
+# Format name mapping: maps CLI/old format names to internal format names
+FORMAT_MAPPING = {
+    "markdown_with_labels": "markdown_with_headers",
+    "markdown_no_labels": "markdown",
+    "html": "html_with_labels",
+    "images": "images_with_bboxes",
+    # Internal format names map to themselves
+    "markdown_with_headers": "markdown_with_headers",
+    "markdown": "markdown",
+    "html_with_labels": "html_with_labels",
+    "images_with_bboxes": "images_with_bboxes",
+    "all": "all",
+}
 
-def setup_logging():
+
+def normalize_format_name(format_name: str) -> str:
+    """Normalize format name to internal format name"""
+    return FORMAT_MAPPING.get(format_name, format_name)
+
+
+def setup_logging() -> logging.Logger:
     """Setup comprehensive logging system"""
     log_dir = Path("output/logs")
     log_dir.mkdir(parents=True, exist_ok=True)
@@ -33,7 +53,7 @@ def setup_logging():
     return logging.getLogger(__name__)
 
 
-def setup_output_directories():
+def setup_output_directories() -> dict[str, str]:
     """Create output directory structure"""
     output_dirs = {
         "markdown": "output/markdown",
@@ -50,7 +70,7 @@ def setup_output_directories():
     return output_dirs
 
 
-def get_image_files(input_dir="input"):
+def get_image_files(input_dir: str = "input") -> list[Path]:
     """Get all supported image files from input directory"""
     input_path = Path(input_dir)
     if not input_path.exists():
@@ -59,7 +79,7 @@ def get_image_files(input_dir="input"):
 
     # Supported image formats
     extensions = ["*.png", "*.jpg", "*.jpeg", "*.tiff", "*.tif"]
-    image_files = []
+    image_files: list[Path] = []
 
     for ext in extensions:
         image_files.extend(input_path.glob(ext))
@@ -68,7 +88,7 @@ def get_image_files(input_dir="input"):
     return image_files
 
 
-def needs_processing(image_path, requested_format, output_dirs):
+def needs_processing(image_path: Path, requested_format: str, output_dirs: dict[str, str]) -> bool:
     """Check if image needs to be processed based on existing output files"""
     base_name = image_path.stem
 
@@ -86,23 +106,15 @@ def needs_processing(image_path, requested_format, output_dirs):
         # Skip only if ALL outputs exist
         return not all(path.exists() for path in existing_outputs.values())
     else:
-        # Map old format names to new ones
-        format_map = {
-            "markdown_with_labels": "markdown_with_headers",
-            "markdown_no_labels": "markdown",
-            "html": "html_with_labels",
-            "images": "images_with_bboxes",
-        }
-        actual_format = format_map.get(requested_format)
-        if actual_format is None:
-            actual_format = requested_format
+        # Normalize format name to internal format
+        actual_format = normalize_format_name(requested_format)
         output_path = existing_outputs.get(actual_format)
         if output_path is None:
             return True
         return not output_path.exists()
 
 
-def get_missing_formats(image_path, requested_format, output_dirs):
+def get_missing_formats(image_path: Path, requested_format: str, output_dirs: dict[str, str]) -> list[str]:
     """Get list of formats that need to be generated"""
     base_name = image_path.stem
 
@@ -124,14 +136,18 @@ def get_missing_formats(image_path, requested_format, output_dirs):
             ).exists()
         ]
     else:
+        # Normalize format name to internal format before returning
+        normalized_format = normalize_format_name(requested_format)
         return (
-            [requested_format]
+            [normalized_format]
             if needs_processing(image_path, requested_format, output_dirs)
             else []
         )
 
 
-def process_image(client, image_path, prompt_type="ocr", model_name="chandra-ocr"):
+def process_image(
+    client: lms.Client, image_path: Path, prompt_type: str = "ocr", model_name: str = "chandra-ocr"
+) -> Tuple[Optional[Any], float]:
     """Process a single image and return OCR result"""
     try:
         logging.info(f"Processing {image_path.name} with prompt: {prompt_type}")
@@ -148,12 +164,18 @@ def process_image(client, image_path, prompt_type="ocr", model_name="chandra-ocr
         logging.info(f"Completed {image_path.name} in {processing_time:.2f} seconds")
         return prediction, processing_time
 
+    except (IOError, OSError) as e:
+        logging.error(f"Error reading image file {image_path}: {e}")
+        return None, 0.0
+    except KeyError as e:
+        logging.error(f"Invalid prompt type '{prompt_type}' or model '{model_name}' not found: {e}")
+        return None, 0.0
     except Exception as e:
-        logging.error(f"Error processing {image_path}: {e}")
-        return None, 0
+        logging.error(f"Unexpected error processing {image_path} with model {model_name}: {e}")
+        return None, 0.0
 
 
-def parse_ocr_response(prediction):
+def parse_ocr_response(prediction: Any) -> str:
     """Parse OCR response and extract HTML content"""
     try:
         # Handle PredictionResult object
@@ -201,12 +223,15 @@ def parse_ocr_response(prediction):
             # If not JSON, treat as plain HTML
             return prediction_str
 
+    except (AttributeError, TypeError) as e:
+        logging.error(f"Error accessing prediction content: {e}")
+        return ""
     except Exception as e:
-        logging.error(f"Error parsing OCR response: {e}")
+        logging.error(f"Unexpected error parsing OCR response: {e}")
         return ""
 
 
-def html_to_markdown(html_content, include_headers_footers=True):
+def html_to_markdown(html_content: str, include_headers_footers: bool = True) -> str:
     """Convert HTML content to markdown"""
     if not html_content:
         return ""
@@ -249,12 +274,15 @@ def html_to_markdown(html_content, include_headers_footers=True):
 
         return text.strip()
 
+    except (AttributeError, TypeError) as e:
+        logging.error(f"Error parsing HTML structure: {e}")
+        return html_content
     except Exception as e:
-        logging.error(f"Error converting HTML to markdown: {e}")
+        logging.error(f"Unexpected error converting HTML to markdown: {e}")
         return html_content
 
 
-def save_markdown_with_labels(html_content, output_path, base_name):
+def save_markdown_with_labels(html_content: str, output_path: Path, base_name: str) -> None:
     """Save markdown with headers and footers included"""
     markdown_content = html_to_markdown(html_content, include_headers_footers=True)
     output_file = output_path / f"{base_name}.md"
@@ -263,7 +291,7 @@ def save_markdown_with_labels(html_content, output_path, base_name):
     logging.info(f"Saved markdown with labels: {output_file}")
 
 
-def save_markdown_no_labels(html_content, output_path, base_name):
+def save_markdown_no_labels(html_content: str, output_path: Path, base_name: str) -> None:
     """Save markdown without headers and footers"""
     markdown_content = html_to_markdown(html_content, include_headers_footers=False)
     output_file = output_path / f"{base_name}.md"
@@ -272,7 +300,7 @@ def save_markdown_no_labels(html_content, output_path, base_name):
     logging.info(f"Saved markdown without labels: {output_file}")
 
 
-def save_html_with_labels(html_content, output_path, base_name):
+def save_html_with_labels(html_content: str, output_path: Path, base_name: str) -> None:
     """Save HTML with proper structure"""
     full_html = f"""<!DOCTYPE html>
 <html>
@@ -298,20 +326,127 @@ def save_html_with_labels(html_content, output_path, base_name):
     logging.info(f"Saved HTML with labels: {output_file}")
 
 
-def save_images_with_bboxes(html_content, image_path, output_path, base_name):
-    """Save image with bounding boxes (placeholder for now)"""
+def save_images_with_bboxes(html_content: str, image_path: Path, output_path: Path, base_name: str) -> None:
+    """Save image with bounding boxes drawn from HTML data-bbox attributes.
+    
+    Parses HTML to extract div elements with data-bbox attributes, scales coordinates
+    from normalized 0-1024 range to image dimensions, and draws rectangles with labels.
+    """
     try:
-        # For now, just copy the original image
-        # TODO: Implement actual bbox drawing when layout data is available
+        # Open the original image
         image = Image.open(image_path)
+        img_width, img_height = image.size
+        
+        # Create a copy for drawing
+        img_with_bboxes = image.copy()
+        draw = ImageDraw.Draw(img_with_bboxes)
+        
+        # Try to load a font for labels (fallback to default if not available)
+        try:
+            font = ImageFont.truetype("/System/Library/Fonts/Helvetica.ttc", 12)
+        except (OSError, IOError):
+            try:
+                font = ImageFont.truetype("arial.ttf", 12)
+            except (OSError, IOError):
+                font = ImageFont.load_default()
+        
+        # Parse HTML to find divs with data-bbox attributes
+        soup = BeautifulSoup(html_content, "html.parser")
+        bbox_count = 0
+        
+        # Find all divs with data-bbox attribute
+        for div in soup.find_all("div", attrs={"data-bbox": True}):
+            bbox_attr = div.get("data-bbox")
+            label_attr = div.get("data-label", "")
+            
+            if not bbox_attr:
+                continue
+            
+            # Parse bbox coordinates: format is [x0, y0, x1, y1] normalized 0-1024
+            # Handle both string format "[x0, y0, x1, y1]" and list format
+            try:
+                # Try to parse as JSON array first
+                if isinstance(bbox_attr, str):
+                    # Remove brackets and split by comma
+                    coords_str = bbox_attr.strip("[]")
+                    coords = [float(x.strip()) for x in coords_str.split(",")]
+                else:
+                    coords = list(bbox_attr)
+                
+                if len(coords) != 4:
+                    logging.warning(f"Invalid bbox format for {base_name}: {bbox_attr}")
+                    continue
+                
+                x0_norm, y0_norm, x1_norm, y1_norm = coords
+                
+                # Scale from normalized 0-1024 to actual image dimensions
+                x0 = int((x0_norm / 1024.0) * img_width)
+                y0 = int((y0_norm / 1024.0) * img_height)
+                x1 = int((x1_norm / 1024.0) * img_width)
+                y1 = int((y1_norm / 1024.0) * img_height)
+                
+                # Ensure coordinates are within image bounds
+                x0 = max(0, min(x0, img_width))
+                y0 = max(0, min(y0, img_height))
+                x1 = max(0, min(x1, img_width))
+                y1 = max(0, min(y1, img_height))
+                
+                # Choose color based on label type
+                label_lower = label_attr.lower() if label_attr else ""
+                if "header" in label_lower or "title" in label_lower:
+                    color = (255, 0, 0)  # Red for headers
+                elif "footer" in label_lower:
+                    color = (0, 0, 255)  # Blue for footers
+                elif "table" in label_lower:
+                    color = (0, 255, 0)  # Green for tables
+                elif "image" in label_lower or "figure" in label_lower:
+                    color = (255, 165, 0)  # Orange for images
+                else:
+                    color = (0, 255, 255)  # Cyan for text and others
+                
+                # Draw rectangle (outline only, 2px width)
+                draw.rectangle([x0, y0, x1, y1], outline=color, width=2)
+                
+                # Draw label text above the box if there's space
+                if label_attr and y0 > 15:
+                    try:
+                        # Get text bounding box for background
+                        bbox_text = draw.textbbox((x0, y0 - 15), label_attr, font=font)
+                        # Draw semi-transparent background (PIL doesn't support alpha in fill, so use a darker color)
+                        draw.rectangle(bbox_text, fill=(0, 0, 0))
+                        # Draw text
+                        draw.text((x0, y0 - 15), label_attr, fill=color, font=font)
+                    except Exception:
+                        # Fallback if text rendering fails - just draw text without background
+                        try:
+                            draw.text((x0, y0 - 15), label_attr, fill=color, font=font)
+                        except Exception:
+                            pass
+                
+                bbox_count += 1
+                
+            except (ValueError, TypeError, IndexError) as e:
+                logging.warning(f"Error parsing bbox '{bbox_attr}' for {base_name}: {e}")
+                continue
+        
+        # Save the image with bounding boxes
         output_file = output_path / f"{base_name}_bboxes.png"
-        image.save(output_file)
-        logging.info(f"Saved image with bboxes: {output_file}")
+        img_with_bboxes.save(output_file)
+        
+        if bbox_count > 0:
+            logging.info(f"Saved image with {bbox_count} bounding boxes: {output_file}")
+        else:
+            logging.warning(f"No bounding boxes found in HTML for {base_name}, saved original image")
+            
+    except (IOError, OSError) as e:
+        logging.error(f"Error reading or writing image file for {base_name}: {e}")
     except Exception as e:
-        logging.error(f"Error saving image for {base_name}: {e}")
+        logging.error(f"Unexpected error saving image for {base_name}: {e}")
 
 
-def process_output_formats(html_content, image_path, formats_to_process, output_dirs):
+def process_output_formats(
+    html_content: str, image_path: Path, formats_to_process: list[str], output_dirs: dict[str, str]
+) -> None:
     """Process and save outputs for specified formats"""
     base_name = image_path.stem
 
@@ -333,11 +468,15 @@ def process_output_formats(html_content, image_path, formats_to_process, output_
                 save_images_with_bboxes(
                     html_content, image_path, Path(output_dirs[format_type]), base_name
                 )
+        except (IOError, OSError) as e:
+            logging.error(f"File I/O error processing format {format_type} for {base_name}: {e}")
+        except KeyError as e:
+            logging.error(f"Invalid format type '{format_type}' or missing output directory: {e}")
         except Exception as e:
-            logging.error(f"Error processing format {format_type} for {base_name}: {e}")
+            logging.error(f"Unexpected error processing format {format_type} for {base_name}: {e}")
 
 
-def main():
+def main() -> None:
     parser = argparse.ArgumentParser(
         description="LM Studio OCR - Enhanced batch processing with multiple output formats"
     )
@@ -365,15 +504,7 @@ def main():
     output_dirs = setup_output_directories()
 
     # Map format arguments to internal format names
-    format_mapping = {
-        "markdown_with_headers": "markdown_with_headers",
-        "markdown": "markdown",
-        "html": "html_with_labels",
-        "images": "images_with_bboxes",
-        "all": "all",
-    }
-
-    requested_format = format_mapping[args.format]
+    requested_format = normalize_format_name(args.format)
 
     # Get all image files
     image_files = get_image_files(args.input_dir)
@@ -392,50 +523,94 @@ def main():
     skipped_count = 0
     total_processing_time = 0
 
-    with lms.Client() as client:
-        for i, image_path in enumerate(image_files, 1):
-            # Check if processing is needed
-            if not needs_processing(image_path, requested_format, output_dirs):
-                logger.info(f"Skipping {image_path.name} (already processed)")
-                skipped_count += 1
-                continue
-
-            # Get missing formats
-            formats_to_process = get_missing_formats(
-                image_path, requested_format, output_dirs
-            )
-            if not formats_to_process:
-                logger.info(f"Skipping {image_path.name} (all requested formats exist)")
-                skipped_count += 1
-                continue
-
-            logger.info(f"[{i}/{len(image_files)}] Processing {image_path.name}")
-
-            # Choose prompt based on whether we need layout information
-            needs_layout = (
-                "images_with_bboxes" in formats_to_process
-                or "markdown_with_headers" in formats_to_process
-                or "markdown" in formats_to_process
-            )
-            prompt_type = "ocr_layout" if needs_layout else "ocr"
-
-            # Process image
-            prediction, processing_time = process_image(
-                client, image_path, prompt_type, args.model
-            )
-
-            if prediction:
-                html_content = parse_ocr_response(prediction)
-                if html_content:
-                    process_output_formats(
-                        html_content, image_path, formats_to_process, output_dirs
+    # Validate LM Studio connection and model availability, then process images
+    try:
+        with lms.Client() as client:
+            # Test connection by trying to list models
+            try:
+                models = client.llm.list_models()
+                available_models = [m.name for m in models] if hasattr(models, "__iter__") else []
+                
+                # Check if requested model is available
+                if args.model not in available_models:
+                    logger.warning(
+                        f"Model '{args.model}' not found in available models. "
+                        f"Available models: {', '.join(available_models) if available_models else 'none'}. "
+                        f"Attempting to use model anyway..."
                     )
-                    processed_count += 1
-                    total_processing_time += processing_time
                 else:
-                    logger.error(f"No content extracted from {image_path.name}")
-            else:
-                logger.error(f"Failed to process {image_path.name}")
+                    logger.info(f"Model '{args.model}' is available and ready")
+            except Exception as e:
+                logger.warning(
+                    f"Could not verify model availability: {e}. "
+                    f"Attempting to proceed with model '{args.model}'..."
+                )
+            
+            # Test model access by trying to get it
+            try:
+                test_model = client.llm.model(args.model)
+                logger.info(f"Successfully connected to LM Studio and accessed model '{args.model}'")
+            except Exception as e:
+                logger.error(
+                    f"Failed to access model '{args.model}': {e}. "
+                    f"Please ensure LM Studio is running and the model is loaded."
+                )
+                return
+            
+            # Process images one by one
+            for i, image_path in enumerate(image_files, 1):
+                # Check if processing is needed
+                if not needs_processing(image_path, requested_format, output_dirs):
+                    logger.info(f"Skipping {image_path.name} (already processed)")
+                    skipped_count += 1
+                    continue
+
+                # Get missing formats
+                formats_to_process = get_missing_formats(
+                    image_path, requested_format, output_dirs
+                )
+                if not formats_to_process:
+                    logger.info(f"Skipping {image_path.name} (all requested formats exist)")
+                    skipped_count += 1
+                    continue
+
+                logger.info(f"[{i}/{len(image_files)}] Processing {image_path.name}")
+
+                # Choose prompt based on whether we need layout information
+                needs_layout = (
+                    "images_with_bboxes" in formats_to_process
+                    or "markdown_with_headers" in formats_to_process
+                    or "markdown" in formats_to_process
+                )
+                prompt_type = "ocr_layout" if needs_layout else "ocr"
+
+                # Process image
+                prediction, processing_time = process_image(
+                    client, image_path, prompt_type, args.model
+                )
+
+                if prediction:
+                    html_content = parse_ocr_response(prediction)
+                    if html_content:
+                        process_output_formats(
+                            html_content, image_path, formats_to_process, output_dirs
+                        )
+                        processed_count += 1
+                        total_processing_time += processing_time
+                    else:
+                        logger.error(f"No content extracted from {image_path.name}")
+                else:
+                    logger.error(f"Failed to process {image_path.name}")
+    
+    except (ConnectionError, OSError) as e:
+        logger.error(
+            f"Failed to connect to LM Studio: {e}. "
+            f"Please ensure LM Studio is running and the API server is active."
+        )
+        return
+    except Exception as e:
+        logger.error(f"Unexpected error connecting to LM Studio: {e}")
+        return
 
     # Final summary
     logger.info("-" * 60)

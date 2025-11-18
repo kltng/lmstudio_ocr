@@ -10,7 +10,7 @@
 - Run single test: `uv run pytest path/to/test.py::test_name`
 
 ## Script Usage
-- `--format`: Choose output format (markdown_labels, markdown_no_labels, html, images, all)
+- `--format`: Choose output format (markdown_with_headers, markdown, html, images, all)
 - `--input-dir`: Specify input directory (default: input)
 - `--model`: Specify LM Studio model (default: chandra-ocr)
 - Script processes images one-by-one and skips already processed files

@@ -51,6 +51,8 @@ ALLOWED_ATTRIBUTES = [
     "href",
     "alt",
     "align",
+    "data-bbox",
+    "data-label",
 ]
 
 BASE_GUIDELINES = """

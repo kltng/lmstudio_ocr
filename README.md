@@ -240,8 +240,8 @@ uv run python main.py --format all --input-dir input_images
 
 # Process specific format only
 uv run python main.py --format html --input-dir input_images
-uv run python main.py --format markdown_labels --input-dir input_images
-uv run python main.py --format markdown_no_labels --input-dir input_images
+uv run python main.py --format markdown_with_headers --input-dir input_images
+uv run python main.py --format markdown --input-dir input_images
 uv run python main.py --format images --input-dir input_images
 ```
 
@@ -249,7 +249,7 @@ uv run python main.py --format images --input-dir input_images
 
 | Option | Description | Default |
 |---------|-------------|----------|
-| `--format` | Output format to generate (markdown_labels, markdown_no_labels, html, images, all) | `all` |
+| `--format` | Output format to generate (markdown_with_headers, markdown, html, images, all) | `all` |
 | `--input-dir` | Input directory containing images | `input` |
 | `--model` | LM Studio model name (any vision-language model) | `chandra-ocr` |
 
@@ -257,8 +257,8 @@ uv run python main.py --format images --input-dir input_images
 
 | Format | Description | Output File |
 |--------|-------------|--------------|
-| `markdown_labels` | Markdown with page headers and footers | `{filename}.md` |
-| `markdown_no_labels` | Markdown without page headers/footers | `{filename}.md` |
+| `markdown_with_headers` | Markdown with page headers and footers | `{filename}.md` |
+| `markdown` | Markdown without page headers/footers | `{filename}.md` |
 | `html` | Styled HTML with proper structure | `{filename}.html` |
 | `images` | Images with bounding boxes | `{filename}_bboxes.png` |
 | `all` | Generate all formats | All above files |
@@ -269,9 +269,9 @@ uv run python main.py --format images --input-dir input_images
 output/
 ├── logs/                           # Processing logs with timestamps
 │   └── ocr_processing_YYYYMMDD_HHMMSS.log
-├── markdown_labels/                # Markdown output with headers/footers
+├── markdown_with_headers/          # Markdown output with headers/footers
 │   └── image1.md
-├── markdown_no_labels/             # Markdown output without headers/footers  
+├── markdown/                       # Markdown output without headers/footers  
 │   └── image1.md
 ├── html/                           # HTML output with styling
 │   └── image1.html
@@ -285,13 +285,13 @@ After processing, you can merge all markdown files into a single document:
 
 ```bash
 # Merge markdown with labels
-uv run python merge_markdown.py output/markdown_labels merged_with_labels.md
+uv run python merge_markdown.py output/markdown_with_headers merged_with_labels.md
 
 # Merge markdown without labels  
-uv run python merge_markdown.py output/markdown_no_labels merged_without_labels.md
+uv run python merge_markdown.py output/markdown merged_without_labels.md
 
 # Merge all markdown files (sorted by filename)
-uv run python merge_markdown.py output/markdown_no_labels all_merged.md
+uv run python merge_markdown.py output/markdown all_merged.md
 ```
 
 ## Examples
